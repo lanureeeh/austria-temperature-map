@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Temperature Map Switcher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .legend {
+      background: white;
+      padding: 8px 12px;
+      line-height: 1.3em;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-shadow: 0 0 6px rgba(0,0,0,0.2);
+    }
+    /* Style the layer control */
+    .leaflet-control-layers {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 6px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      font-size: 16px;
+    }
+    .leaflet-control-layers-expanded {
+      padding: 12px;
+      min-width: 280px;
+    }
+    .leaflet-control-layers label {
+      margin: 8px 0;
+      font-weight: normal;
+      line-height: 1.4;
+    }
+    /* Add visual dividers in layer control */
+    .leaflet-control-layers-overlays {
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .leaflet-control-layers-base {
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .layer-divider {
+      height: 1px;
+      background-color: #ddd;
+      margin: 8px 0;
+      width: 100%;
+    }
+    /* Custom styling for temperature layer labels */
+    .temp-layer-label {
+      display: block;
+      margin: 10px 0;
+    }
+    .temp-layer-title {
+      font-weight: bold;
+      font-size: 17px;
+      margin-bottom: 3px;
+    }
+    .temp-layer-subtitle {
+      font-size: 13px;
+      color: #000;
+      line-height: 1.3;
+      margin-left: 20px;
+    }
+    .max-temp-title {
+      color: #d73027;
+    }
+    .min-temp-title {
+      color: #313695;
+    }
+    /* Increase popup text size */
+    .leaflet-popup-content {
+      font-size: 16px;
+    }
+    /* Simple geocoder styling - just the magnifier icon */
+    .leaflet-control-geocoder {
+      font-size: 16px;
+    }
+    .custom-layer-section {
+      margin: 8px 0;
+    }
+    .custom-layer-section label {
+      display: block;
+      margin: 6px 0;
+      font-weight: normal;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .custom-layer-section input {
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+<script src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
+
+<script>
+  // Create base map layer (OSM only)
+  var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    zIndex: 1
+  });
+
+  // Create temperature layers
+  var maxTempLayer = L.tileLayer('tiles_leaflet_max/{z}/{x}/{y}.png', {
+    opacity: 0.8, tileSize: 256, minZoom: 7, maxZoom: 13, noWrap: true, zIndex: 10
+  });
+
+  var minTempLayer = L.tileLayer('tiles_leaflet_min/{z}/{x}/{y}.png', {
+    opacity: 0.8, tileSize: 256, minZoom: 7, maxZoom: 13, noWrap: true, zIndex: 10
+  });
+
+  // Create urban layer (roads, railways) - using a working tile service
+  var urbanLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png', {
+    attribution: '© Stadia Maps © Stamen Design © OpenStreetMap contributors',
+    opacity: 0.6,
+    zIndex: 20
+  });
+
+  // Create labels layer (geographical names on top)
+  var labelsLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}{r}.png', {
+    attribution: '© Stadia Maps © Stamen Design © OpenStreetMap contributors',
+    opacity: 0.8,
+    zIndex: 30
+  });
+
+  // Initialize map with default layers (base layer and max temperature)
+  var map = L.map('map', {
+    center: [48.2082, 16.3738],
+    zoom: 11,
+    minZoom: 7,
+    maxZoom: 13,
+    layers: [osmLayer, maxTempLayer] // Start with OSM and max temperature
+  });
+
+  let currentLayer = 'max';
+
+  // Define layers with proper structure for custom ordering
+  var baseLayers = {
+    "<span style='color: #d73027;'>Maximum</span> Temperature (°C)": maxTempLayer,
+    "<span style='color: #4575b4;'>Minimum</span> Temperature (°C)": minTempLayer
+  };
+
+  var overlayLayers = {
+    "Urban": urbanLayer,
+    "Labels": labelsLayer,
+    "<div class='layer-divider'></div>Base Map": osmLayer
+  };
+
+  // Remove the default layer control and create custom one
+  // var layerControl = L.control.layers(baseLayers, overlayLayers, {
+  //   collapsed: false,
+  //   position: 'topright'
+  // }).addTo(map);
+
+  // Create custom layer control
+  var customLayerControl = L.control({position: 'topright'});
+  customLayerControl.onAdd = function () {
+    var div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded');
+    div.innerHTML = `
+      <div class="custom-layer-section">
+        <label><input type="checkbox" id="urban-layer"> Urban</label>
+        <label><input type="checkbox" id="labels-layer"> Labels</label>
+      </div>
+      <div class="layer-divider"></div>
+      <div class="custom-layer-section">
+        <label><input type="radio" name="temp-layer" id="max-temp" checked> <span style='color: #d73027;'>Maximum</span> Temperature (°C)</label>
+        <label><input type="radio" name="temp-layer" id="min-temp"> <span style='color: #4575b4;'>Minimum</span> Temperature (°C)</label>
+      </div>
+      <div class="layer-divider"></div>
+      <div class="custom-layer-section">
+        <label><input type="checkbox" id="base-map" checked> Base Map</label>
+      </div>
+    `;
+    
+    // Prevent map events when clicking on control
+    L.DomEvent.disableClickPropagation(div);
+    
+    return div;
+  };
+  customLayerControl.addTo(map);
+
+  // Add event listeners for custom layer control
+  setTimeout(function() {
+    // Urban layer checkbox
+    document.getElementById('urban-layer').addEventListener('change', function(e) {
+      if (e.target.checked) {
+        map.addLayer(urbanLayer);
+      } else {
+        map.removeLayer(urbanLayer);
+      }
+    });
+
+    // Labels layer checkbox
+    document.getElementById('labels-layer').addEventListener('change', function(e) {
+      if (e.target.checked) {
+        map.addLayer(labelsLayer);
+      } else {
+        map.removeLayer(labelsLayer);
+      }
+    });
+
+    // Base map checkbox
+    document.getElementById('base-map').addEventListener('change', function(e) {
+      if (e.target.checked) {
+        map.addLayer(osmLayer);
+        osmLayer.bringToBack();
+      } else {
+        map.removeLayer(osmLayer);
+      }
+    });
+
+    // Temperature layer radio buttons
+    document.getElementById('max-temp').addEventListener('change', function(e) {
+      if (e.target.checked) {
+        map.removeLayer(minTempLayer);
+        map.addLayer(maxTempLayer);
+        currentLayer = 'max';
+        updateDynamicLegend();
+      }
+    });
+
+    document.getElementById('min-temp').addEventListener('change', function(e) {
+      if (e.target.checked) {
+        map.removeLayer(maxTempLayer);
+        map.addLayer(minTempLayer);
+        currentLayer = 'min';
+        updateDynamicLegend();
+      }
+    });
+  }, 100);
+
+  // Add event listeners for layer changes
+  map.on('baselayerchange', function(e) {
+    // Handle temperature layer changes (radio buttons)
+    if (e.layer === maxTempLayer) {
+      currentLayer = 'max';
+      updateDynamicLegend();
+    } else if (e.layer === minTempLayer) {
+      currentLayer = 'min';
+      updateDynamicLegend();
+    }
+  });
+
+  map.on('overlayadd', function(e) {
+    // Handle overlay additions
+    if (e.layer === osmLayer) {
+      // Push base layer to the back so temperature layers stay on top
+      osmLayer.bringToBack();
+    } else if (e.layer === urbanLayer) {
+      // Ensure urban layer stays above temperature layers
+      urbanLayer.bringToFront();
+      // But labels should be on top if they exist
+      if (map.hasLayer(labelsLayer)) {
+        labelsLayer.bringToFront();
+      }
+    } else if (e.layer === labelsLayer) {
+      // Ensure labels layer stays on top of everything
+      labelsLayer.bringToFront();
+    }
+  });
+
+  map.on('overlayremove', function(e) {
+    // Handle overlay removal
+    // No special action needed for layer removal
+  });
+
+  // Ensure proper layer ordering on initial load
+  setTimeout(function() {
+    if (map.hasLayer(osmLayer)) {
+      osmLayer.bringToBack();
+    }
+    if (map.hasLayer(urbanLayer)) {
+      urbanLayer.bringToFront();
+    }
+    if (map.hasLayer(labelsLayer)) {
+      labelsLayer.bringToFront();
+    }
+  }, 100);
+
+  var legend = L.control({position: 'bottomright'});
+  legend.onAdd = function () {
+    var div = L.DomUtil.create('div', 'legend');
+    div.innerHTML = `
+      <strong id="legend-title" style="font-size: 17px;">Max Temperature (°C):</strong><br>
+      <div style="display: flex; align-items: center; margin-top: 8px;">
+        <span id="legend-min" style="margin-right: 10px; font-size: 15px; font-weight: bold;">0.0</span>
+        <canvas id="legend-canvas" width="300" height="24"></canvas>
+        <span id="legend-max" style="margin-left: 10px; font-size: 15px; font-weight: bold;">0.0</span>
+      </div>
+    `;
+    return div;
+  };
+  legend.addTo(map);
+
+  const tileStats = { max: {}, min: {} };
+  const zoomLevels = [7, 8, 9, 10, 11, 12, 13];
+  const jsonPromises = [];
+
+  zoomLevels.forEach(z => {
+    jsonPromises.push(
+      fetch(`json_tile_values/tile_stats_max_temp_z${z}.json`)
+        .then(res => res.json()).then(data => tileStats.max[z] = data)
+    );
+    jsonPromises.push(
+      fetch(`json_tile_values/tile_stats_min_temp_z${z}.json`)
+        .then(res => res.json()).then(data => tileStats.min[z] = data)
+    );
+  });
+
+  Promise.all(jsonPromises).then(() => {
+    map.on('moveend zoomend', updateDynamicLegend);
+    // Add a small delay to ensure DOM elements are ready
+    setTimeout(updateDynamicLegend, 100);
+  });
+
+  function updateDynamicLegend() {
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+    const zstats = tileStats[currentLayer][zoom];
+    if (!zstats) {
+      console.log('No tile stats available for zoom level', zoom);
+      return;
+    }
+
+    const tileSize = 256;
+    const nw = map.project(bounds.getNorthWest(), zoom).divideBy(tileSize).floor();
+    const se = map.project(bounds.getSouthEast(), zoom).divideBy(tileSize).floor();
+    const colorPoints = [];
+    let min = Infinity, max = -Infinity;
+
+    for (let x = nw.x; x <= se.x; x++) {
+      for (let y = nw.y; y <= se.y; y++) {
+        const key = `${zoom}/${x}/${y}`;
+        const tile = zstats[key];
+        if (tile) {
+          min = Math.min(min, tile.min);
+          max = Math.max(max, tile.max);
+          
+          // Add color points from min_color and max_color
+          if (tile.min_color && tile.max_color) {
+            const minColor = `rgba(${tile.min_color[0]}, ${tile.min_color[1]}, ${tile.min_color[2]}, ${tile.min_color[3]/255})`;
+            const maxColor = `rgba(${tile.max_color[0]}, ${tile.max_color[1]}, ${tile.max_color[2]}, ${tile.max_color[3]/255})`;
+            
+            colorPoints.push({ value: tile.min, color: minColor });
+            colorPoints.push({ value: tile.max, color: maxColor });
+          }
+        }
+      }
+    }
+
+    if (min === Infinity || max === -Infinity) {
+      console.log('No valid temperature data found');
+      return;
+    }
+
+    const titleElement = document.getElementById('legend-title');
+    const minElement = document.getElementById('legend-min');
+    const maxElement = document.getElementById('legend-max');
+    
+    if (titleElement) {
+      titleElement.innerText = (currentLayer === 'max' ? 'Max Temperature' : 'Min Temperature') + ' (°C):';
+    }
+    
+    if (minElement) {
+      if (currentLayer === 'max') {
+        minElement.innerText = '+' + min.toFixed(1);
+      } else {
+        minElement.innerText = min.toFixed(1);
+      }
+    }
+    
+    if (maxElement) {
+      if (currentLayer === 'max') {
+        maxElement.innerText = '+' + max.toFixed(1);
+      } else {
+        maxElement.innerText = max.toFixed(1);
+      }
+    }
+
+    if (colorPoints.length === 0) {
+      console.log('No color data available for current tiles');
+      return;
+    }
+    
+    // Sort color points by temperature value and remove duplicates
+    const uniqueColorPoints = new Map();
+    colorPoints.forEach(point => {
+      const key = point.value.toFixed(2);
+      if (!uniqueColorPoints.has(key)) {
+        uniqueColorPoints.set(key, point);
+      }
+    });
+    
+    const sortedColorPoints = Array.from(uniqueColorPoints.values())
+      .sort((a, b) => a.value - b.value);
+    
+    drawColorRamp(sortedColorPoints, min, max);
+  }
+
+  function drawColorRamp(ramp, minVal, maxVal) {
+    const canvas = document.getElementById('legend-canvas');
+    if (!canvas) {
+      console.warn('Legend canvas not found');
+      return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    if (width === 0 || height === 0) {
+      console.warn('Canvas has zero dimensions');
+      return;
+    }
+    
+    if (!ramp || ramp.length === 0) {
+      console.warn('No color ramp data available');
+      return;
+    }
+    
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+
+    ramp.sort((a, b) => a.value - b.value).forEach(stop => {
+      const t = (stop.value - minVal) / (maxVal - minVal);
+      gradient.addColorStop(Math.min(Math.max(t, 0), 1), stop.color);
+    });
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  L.Control.geocoder({ 
+    defaultMarkGeocode: true,
+    position: 'topleft',
+    collapsed: true,
+    placeholder: 'Search for places...'
+  })
+    .on('markgeocode', function(e) {
+      map.setView(e.geocode.center, 12);
+    }).addTo(map);
+
+  // Load pixel temperature lookup data
+  let pixelTemperatureData = null;
+  fetch('json_tile_values/pixel_temperature_lookup_optimized.json')
+    .then(res => res.json())
+    .then(data => {
+      pixelTemperatureData = data.temp_data; // Extract the temp_data object
+      console.log('Loaded temperature data for', Object.keys(pixelTemperatureData).length, 'coordinates');
+    })
+    .catch(err => console.error('Failed to load pixel temperature data:', err));
+
+  // Add click event to show temperature data at clicked location
+  map.on('click', function(e) {
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    
+    console.log('Clicked at:', lat, lng);
+    
+    if (!pixelTemperatureData) {
+      L.popup()
+        .setLatLng(e.latlng)
+        .setContent('<div style="font-family: sans-serif; font-size: 16px;">Temperature data not loaded yet</div>')
+        .openOn(map);
+      return;
+    }
+    
+    console.log('Pixel data available, searching for coordinates...');
+    
+    // Find the closest coordinate in the data
+    let closestKey = null;
+    let minDistance = Infinity;
+    const searchRadius = 0.01; // Search within ~1km radius
+    
+    // First try exact match with different rounding
+    for (let precision = 6; precision >= 3; precision--) {
+      const latRounded = parseFloat(lat.toFixed(precision));
+      const lngRounded = parseFloat(lng.toFixed(precision));
+      const coordKey = `${latRounded},${lngRounded}`;
+      
+      if (pixelTemperatureData[coordKey]) {
+        closestKey = coordKey;
+        break;
+      }
+    }
+    
+    // If no exact match, find nearest coordinate
+    if (!closestKey) {
+      for (const coordKey in pixelTemperatureData) {
+        const [coordLat, coordLng] = coordKey.split(',').map(parseFloat);
+        
+        // Skip if too far away
+        if (Math.abs(coordLat - lat) > searchRadius || Math.abs(coordLng - lng) > searchRadius) {
+          continue;
+        }
+        
+        const distance = Math.sqrt(
+          Math.pow(coordLat - lat, 2) + Math.pow(coordLng - lng, 2)
+        );
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestKey = coordKey;
+        }
+      }
+    }
+    
+    let popupContent = '';
+    
+    if (closestKey && pixelTemperatureData[closestKey]) {
+      const temperatureData = pixelTemperatureData[closestKey];
+      const minTemp = temperatureData[0];
+      const maxTemp = temperatureData[1];
+      
+      popupContent = '<div style="font-family: sans-serif; line-height: 1.4; font-size: 16px;">';
+      popupContent += '<strong style="font-size: 17px;">Temperature Data</strong><br>';
+      popupContent += `<span style="color: #313695; font-weight: bold;">Min Temperature:</span> ${minTemp.toFixed(1)}°C<br>`;
+      popupContent += `<span style="color: #d73027; font-weight: bold;">Max Temperature:</span> +${maxTemp.toFixed(1)}°C`;
+      popupContent += '</div>';
+    } else {
+      popupContent = '<div style="font-family: sans-serif; font-size: 16px;">No data</div>';
+    }
+    
+    L.popup()
+      .setLatLng(e.latlng)
+      .setContent(popupContent)
+      .openOn(map);
+  });
+</script>
+</body>
+</html>
