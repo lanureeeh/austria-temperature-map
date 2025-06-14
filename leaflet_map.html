@@ -101,7 +101,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 <script src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
-<script src="config.js"></script>
 
 <script>
   // Create base map layer (OSM only)
@@ -120,14 +119,14 @@
   });
 
   // Create urban layer (roads, railways)
-  var urbanLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png?api_key=' + config.STADIA_API_KEY, {
+  var urbanLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png?api_key=YOUR_API_KEY_HERE', {
     attribution: '© Stadia Maps © Stamen Design © OpenStreetMap contributors',
     opacity: 0.6,
     zIndex: 20
   });
 
   // Create labels layer (geographical names on top)
-  var labelsLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}{r}.png?api_key=' + config.STADIA_API_KEY, {
+  var labelsLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}{r}.png?api_key=YOUR_API_KEY_HERE', {
     attribution: '© Stadia Maps © Stamen Design © OpenStreetMap contributors',
     opacity: 0.8,
     zIndex: 30
